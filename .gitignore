@@ -1,0 +1,6 @@
+*.docx
+
+# Archivos generados al compilar Haskell
+haskell/build/
+*.hi
+*.o

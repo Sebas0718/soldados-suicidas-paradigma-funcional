@@ -6,7 +6,8 @@
 
 # -dynamic: enlaza con las bibliotecas dinámicas que trae el paquete "ghc" de Arch
 # (así no hace falta instalar "ghc-static", que pesa unos 2 GB).
-GHC   = ghc -dynamic -O1
+# -Wall: muestra todas las advertencias, para mantener el código limpio.
+GHC   = ghc -dynamic -O1 -Wall
 BUILD = haskell/build
 GUILE = guile -L scheme
 

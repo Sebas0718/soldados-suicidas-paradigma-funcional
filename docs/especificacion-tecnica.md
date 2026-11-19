@@ -350,7 +350,180 @@ la velocidad de aterrizaje baja hacia 0 a medida que β crece.
 
 # Parte 2: implementación
 
-> Se completa al terminar las versiones en Haskell y Scheme.
+## 8. Herramientas
+
+| | Haskell | Scheme |
+|---|---|---|
+| Implementación | GHC 9.6.7 | GNU Guile 3.0.11 |
+| Ejecución | Compilado (`ghc -dynamic -O1 -Wall`) | Guile compila cada módulo al usarlo y guarda el resultado en `~/.cache/guile` |
+| Pruebas | Lista propia de pruebas `(nombre, Bool)` | SRFI-64 (incluida en Guile) |
+| Bibliotecas externas | Ninguna (solo `base`) | Ninguna |
+
+El `Makefile` tiene los comandos: `make run-haskell`, `make run-scheme`, `make test`,
+`make clean`.
+
+## 9. Correspondencia de nombres
+
+Las dos versiones implementan las funciones de la sección 5. En Haskell se usa *camelCase*;
+en Scheme, palabras separadas por guiones y `?` al final de las funciones que responden sí
+o no.
+
+| Módulo | Haskell | Scheme |
+|---|---|---|
+| Fisica | `Fisica.hs` | `fisica.scm` |
+| | `pesoTotal` | `peso-total` |
+| | `kmhAMs`, `msAKmh` | `kmh-a-ms`, `ms-a-kmh` |
+| | `velocidadObjetivo` | `velocidad-objetivo` |
+| | `derivadas` | `derivadas` |
+| | `velocidadExacta`, `distanciaExacta` | `velocidad-exacta`, `distancia-exacta` |
+| RungeKutta | `RungeKutta.hs` | `runge-kutta.scm` |
+| | `sumarVectores`, `escalarVector` | `sumar-vectores`, `escalar-vector` |
+| | `pasoRK4` | `paso-rk4` |
+| Simulacion | `Simulacion.hs` | `simulacion.scm` |
+| | `pasoTiempo`, `toleranciaBeta`, `estadoInicial` | `paso-tiempo`, `tolerancia-beta`, `estado-inicial` |
+| | `tiempo`, `distancia`, `velocidad` | `tiempo`, `distancia`, `velocidad` |
+| | `siguienteEstado` | `siguiente-estado` |
+| | `trayectoria` | (no existe, ver sección 11) |
+| | `aterrizaje`, `velocidadAterrizaje` | `aterrizaje`, `velocidad-aterrizaje` |
+| | `estadoEnTiempo` | `estado-en-tiempo` |
+| | `acotarBeta`, `biseccion`, `buscarBeta` | `acotar-beta`, `biseccion`, `buscar-beta` |
+| Main | `Main.hs` | `main.scm` |
+| | `interpretarPositivo`, `leerPositivo` | `interpretar-positivo`, `leer-positivo` |
+| | `resumen`, `filaTabla`, `tabla` | `resumen`, `fila-tabla`, `tabla` |
+
+## 10. Versión en Haskell
+
+### Representación de los datos
+
+```haskell
+type Vector = [Double]           -- por ejemplo [x, v]
+type Estado = (Double, Vector)   -- (t, [x, v])
+```
+
+Se usan sinónimos de tipo (`type`) para que las firmas se lean como el diseño
+(`pasoRK4 :: (Double -> Vector -> Vector) -> Double -> Estado -> Estado`), sin definir tipos
+nuevos.
+
+### Elementos del lenguaje usados
+
+- **Firmas de tipo** en todas las funciones. GHC comprueba al compilar que cada función
+  recibe y devuelve lo que dice el diseño.
+- **Currificación:** `derivadas beta peso` ya es una función de `t` y `[x, v]`, lista para
+  pasarla a `pasoRK4` sin escribir una función nueva.
+- **Evaluación perezosa:** `trayectoria = iterate (siguienteEstado beta peso) estadoInicial`
+  es una lista infinita. `aterrizaje` toma de ella el primer estado que ya llegó al suelo
+  (`head (dropWhile noHaLlegado ...)`), y solo se calculan los estados hasta ese punto.
+- **Guardas (`|`)** en `acotarBeta` y `biseccion`, con la misma forma que el pseudocódigo.
+- **`where`** para nombrar resultados intermedios (`k1`…`k4`, `betaMedio`, `final`).
+- **`zipWith4`** para combinar los cuatro vectores `k` con la fórmula `(a + 2b + 2c + d)/6`.
+- **`Maybe`** en `interpretarPositivo`: el tipo obliga a tratar el caso "dato inválido".
+- **`printf` devolviendo `String`:** las líneas del resumen y de la tabla se arman con
+  funciones puras, y solo `main` las imprime.
+
+### Detalles
+
+- `hSetEncoding stdout utf8` al inicio de `main`, para que los acentos se impriman bien en
+  cualquier terminal.
+- Antes de cada `getLine` se revisa `isEOF`: si la entrada viene de un archivo y se acaba, el
+  programa termina con un mensaje en lugar de un error de Haskell.
+- `derivadas` tiene un caso con `error` para cuando el vector no es `[x, v]`. Nunca debería
+  ocurrir, pero así todos los patrones están cubiertos y `-Wall` no da advertencias.
+
+## 11. Versión en Scheme
+
+### Representación de los datos
+
+```scheme
+(x v)          ; un vector es una lista de números
+(t (x v))      ; un estado es una lista con el tiempo y el vector
+```
+
+Las funciones `tiempo`, `distancia` y `velocidad` leen cada parte de un estado, para no
+repetir `car` y `cadr` por todo el código.
+
+### Elementos del lenguaje usados
+
+- **Módulos** con `define-module` y `#:export`: cada archivo declara qué funciones ofrece, igual
+  que la lista de exportación de un módulo de Haskell.
+- **Closures:** `(derivadas beta peso)` devuelve un `lambda` que "recuerda" `beta` y `peso`.
+  Es la forma explícita de hacer en Scheme la currificación que Haskell hace sola.
+- **Recursión de cola** con *let con nombre* (`let avanzar`): `aterrizaje` y
+  `estado-en-tiempo` avanzan paso a paso llamándose a sí mismas como última operación. Scheme
+  garantiza que eso no gasta pila, así que los 13 500 pasos de una caída no son problema.
+- **`map` con varias listas:** `(map (lambda (a b c d) ...) k1 k2 k3 k4)` hace lo mismo que
+  `zipWith4` en Haskell.
+- **`cond`** en `biseccion` y `leer-positivo`, con la misma forma que el pseudocódigo.
+- **`format`** de `(ice-9 format)` para los decimales (`~,3f`), y `read-line` de
+  `(ice-9 rdelim)` para leer una línea.
+
+### Diferencia con el diseño: no hay `trayectoria`
+
+Scheme evalúa todo de inmediato (evaluación **estricta**). Una lista infinita como la de
+Haskell nunca terminaría de construirse. En su lugar:
+
+- `siguiente-estado` avanza un paso;
+- `aterrizaje` repite `siguiente-estado` **hasta** que la distancia alcanza la altura;
+- `estado-en-tiempo` repite `siguiente-estado` **n veces**.
+
+Guile ofrece *streams* perezosos (SRFI-41), con los que se podría imitar la lista infinita,
+pero se descartaron: agregan un concepto nuevo solo para copiar a Haskell, y la recursión de
+cola es la forma natural de repetir en Scheme.
+
+## 12. Comparación entre las dos versiones
+
+| Aspecto | Haskell | Scheme |
+|---|---|---|
+| Evaluación | Perezosa: calcula solo lo que se usa | Estricta: calcula todo en el momento |
+| Tipos | Estáticos, revisados al compilar | Dinámicos, revisados al ejecutar |
+| Repetir pasos | Lista infinita (`iterate`) + `dropWhile` / `!!` | Recursión de cola (`let avanzar`) |
+| Funciones de varios argumentos | Currificadas automáticamente | Se devuelve un `lambda` a mano |
+| Combinar vectores | `zipWith`, `zipWith4` | `map` con varias listas |
+| Dato inválido | `Maybe Double` (`Nothing`) | El número o `#f` |
+| Pruebas | Lista propia `(nombre, Bool)` | SRFI-64 |
+| Tiempo para el caso del enunciado | ≈ 0.3 s | ≈ 1.9 s |
+
+Haskell es más rápido porque GHC conoce los tipos al compilar (todo es `Double`) y optimiza
+con `-O1`. Guile crea listas nuevas en cada paso de Runge-Kutta y revisa los tipos al
+ejecutar. Para este problema ambos tiempos son aceptables.
+
+## 13. Precisión y limitaciones
+
+- **Paso fijo.** Con h = 0.05 s el error de Runge-Kutta frente a la solución exacta es menor
+  que 10⁻⁴ (sección 3.2). En la tabla se nota solo en t = 0.20 s, en el cuarto decimal.
+- **Aterrizaje.** Se toma el primer estado con `x ≥ altura`, sin interpolar entre pasos. Por
+  eso la tabla muestra x = 1 500.052 m: el último paso se pasó 5 cm. El tiempo de caída
+  tiene un error de a lo sumo un paso (0.05 s). La velocidad de aterrizaje casi no se ve
+  afectada, porque en ese momento ya es constante.
+- **Tabla.** Los tiempos de muestra llegan hasta 10 000 s. En una caída más larga se ven menos
+  filas, pero la fila del aterrizaje siempre aparece.
+- **Entradas extremas.** Para cualquier altura positiva existe un β que cumple, y la búsqueda
+  lo encuentra (incluso con 0.1 m, donde β es casi 0). Masas o alturas absurdas (por ejemplo,
+  millones de metros) solo hacen la simulación más lenta.
+
+## 14. Verificación
+
+1. **Pruebas automáticas** (`make test`): 25 en cada lenguaje, las mismas en los dos.
+   - Física: peso, conversiones, ecuaciones en reposo y a velocidad límite, solución exacta.
+   - Runge-Kutta: suma y escala de vectores; un paso con `y' = y` contra el valor calculado
+     a mano (1.1051708333); simulación contra la solución exacta con β = 10 (error < 10⁻⁶) y
+     con β = 574 (error < 10⁻⁴).
+   - Simulación: estado inicial, avance de h por paso, distancia que nunca disminuye,
+     aterrizaje sin pasarse más de un paso, β mayor frena más, β del enunciado = 573.885,
+     aterrizaje a 8 km/h en dos casos distintos, altura muy baja.
+2. **Comparación entre lenguajes:** la salida de los dos programas es idéntica carácter por
+   carácter (sin contar el título) para 80/50/1500, 72.5/15.5/3000 y 60/20/800.
+3. **Validación de entradas** probada a mano: texto, 0, negativos, `80 kg`, infinito, espacios
+   alrededor del número, decimales y fin de la entrada.
+
+## 15. Respuesta a la pregunta de investigación
+
+Para una persona de 80 kg con 50 kg de equipo que salta desde 1 500 m, el programa encuentra
+**β = 573.885 kg/s**. Con ese valor llega al suelo a los 675.25 s a 2.2222 m/s (**8.00 km/h**).
+
+El valor coincide con `W / v_objetivo = 1275.3 N / 2.2222 m/s`, la velocidad límite de la
+solución analítica. Esto confirma el resultado numérico: con β tan grande, el paracaidista
+alcanza la velocidad límite en menos de 2 segundos y cae casi todo el trayecto a velocidad
+constante.
 
 ## Referencias
 

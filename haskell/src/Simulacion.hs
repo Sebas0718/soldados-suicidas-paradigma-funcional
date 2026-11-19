@@ -9,6 +9,7 @@ module Simulacion
   , tiempo
   , distancia
   , velocidad
+  , siguienteEstado
   , trayectoria
   , aterrizaje
   , velocidadAterrizaje
@@ -45,11 +46,14 @@ distancia (_, w) = head w
 velocidad :: Estado -> Double
 velocidad (_, w) = w !! 1
 
+-- | El estado un paso de tiempo después.
+siguienteEstado :: Double -> Double -> Estado -> Estado
+siguienteEstado beta peso = pasoRK4 (derivadas beta peso) pasoTiempo
+
 -- | Todos los estados de la caída, uno por cada paso de tiempo.
 -- Es una lista infinita: Haskell solo calcula los estados que se usan.
 trayectoria :: Double -> Double -> [Estado]
-trayectoria beta peso =
-  iterate (pasoRK4 (derivadas beta peso) pasoTiempo) estadoInicial
+trayectoria beta peso = iterate (siguienteEstado beta peso) estadoInicial
 
 -- | Primer estado en que la distancia recorrida alcanza la altura del salto.
 aterrizaje :: Double -> Double -> Double -> Estado

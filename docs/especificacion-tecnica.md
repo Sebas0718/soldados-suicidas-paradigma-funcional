@@ -178,6 +178,7 @@ flowchart TD
         ater[aterrizaje]
         enT[estadoEnTiempo]
         tray[trayectoria]
+        sig[siguienteEstado]
     end
 
     subgraph RungeKutta
@@ -212,8 +213,9 @@ flowchart TD
     vAter --> ater
     ater --> tray
     enT --> tray
-    tray --> paso
-    tray --> deriv
+    tray --> sig
+    sig --> paso
+    sig --> deriv
 
     paso --> sumar
     paso --> escalar
@@ -269,6 +271,7 @@ Notación: `Vector` es una lista de números; `Estado` es el par `(t, [x, v])`.
 | `toleranciaBeta` | `Número` | 10⁻⁶ kg/s: precisión con la que se busca β |
 | `estadoInicial` | `Estado` | `(0, [0, 0])`: en reposo al inicio |
 | `tiempo`, `distancia`, `velocidad` | `Estado → Número` | Leen `t`, `x` o `v` de un estado |
+| `siguienteEstado` | `β → W → Estado → Estado` | El estado un paso `h` después (un paso de RK4) |
 | `trayectoria` | `β → W → [Estado]` | Todos los estados de la caída, paso a paso |
 | `aterrizaje` | `β → W → altura → Estado` | Primer estado con `x ≥ altura` |
 | `velocidadAterrizaje` | `β → W → altura → v` | Velocidad en el estado de aterrizaje |
@@ -337,8 +340,9 @@ buscarBeta(W, altura, vObj) =
 
 ## 7. Validación de entradas
 
-Los tres datos deben ser **números mayores que 0**. Si el usuario escribe texto, 0 o un número
-negativo, el programa muestra un aviso y vuelve a pedir el dato. No hacen falta más
+Los tres datos deben ser **números finitos mayores que 0**. Si el usuario escribe texto, 0, un
+número negativo o infinito, el programa muestra un aviso y vuelve a pedir el dato. Si la
+entrada se termina antes de tener los tres datos, el programa termina con un mensaje. No hacen falta más
 restricciones: para cualquier altura positiva existe un β que da la velocidad deseada, porque
 la velocidad de aterrizaje baja hacia 0 a medida que β crece.
 

@@ -66,7 +66,7 @@ pruebasSimulacion :: [Prueba]
 pruebasSimulacion =
   [ ("la trayectoria empieza en reposo", head (trayectoria 500 pesoEnunciado) == estadoInicial)
   , ("cada paso avanza h segundos",
-      casiIgual 1e-12 pasoTiempo (tiempo (trayectoria 500 pesoEnunciado !! 1)))
+      casiIgual 1e-12 pasoTiempo (tiempo (siguienteEstado 500 pesoEnunciado estadoInicial)))
   , ("estadoEnTiempo 10 está en t = 10", casiIgual 1e-9 10 (tiempo (estadoEnTiempo 500 pesoEnunciado 10)))
   , ("la distancia nunca disminuye", siempreCrece (map distancia (take 1000 (trayectoria 500 pesoEnunciado))))
   , ("al aterrizar ya se recorrió la altura, sin pasarse más de un paso",

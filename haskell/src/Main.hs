@@ -23,10 +23,12 @@ tiemposMuestra =
 
 -- | Convierte un texto en un número mayor que 0, si se puede.
 -- Ejemplos: "80" -> Just 80.0 ; "-3" -> Nothing ; "abc" -> Nothing
+-- También rechaza "Infinity": con una altura infinita nunca se llegaría al suelo.
 interpretarPositivo :: String -> Maybe Double
 interpretarPositivo texto =
   case reads texto of
-    [(numero, resto)] | all isSpace resto && numero > 0 -> Just numero
+    [(numero, resto)]
+      | all isSpace resto && numero > 0 && not (isInfinite numero) -> Just numero
     _ -> Nothing
 
 -- | Muestra un mensaje y lee un número mayor que 0.

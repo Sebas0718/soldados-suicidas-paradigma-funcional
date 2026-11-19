@@ -3,28 +3,40 @@
 
 (use-modules (srfi srfi-64)
              (fisica)
-             (runge-kutta))
+             (runge-kutta)
+             (simulacion))
 
 ;; Datos del caso del enunciado: 80 kg + 50 kg.
 (define peso-enunciado (peso-total 80 50))
 
-;; Estado después de n pasos de Runge-Kutta con h = 0.05, partiendo del reposo.
-(define (estado-tras-pasos n beta peso)
-  (let avanzar ((pasos-restantes n)
-                (estado (list 0 (list 0 0))))
-    (if (= pasos-restantes 0)
-        estado
-        (avanzar (- pasos-restantes 1)
-                 (paso-rk4 (derivadas beta peso) 0.05 estado)))))
-
-;; ¿Coincide Runge-Kutta con la solución exacta a los 20 s (400 pasos)?
+;; ¿Coincide Runge-Kutta con la solución exacta a los 20 s?
 (define (coincide-con-exacta? beta tolerancia)
-  (let* ((estado (estado-tras-pasos 400 beta peso-enunciado))
-         (t (car estado))
-         (x (car (cadr estado)))
-         (v (cadr (cadr estado))))
-    (and (< (abs (- v (velocidad-exacta beta peso-enunciado t))) tolerancia)
-         (< (abs (- x (distancia-exacta beta peso-enunciado t))) tolerancia))))
+  (let* ((estado (estado-en-tiempo beta peso-enunciado 20))
+         (t (tiempo estado)))
+    (and (< (abs (- (velocidad estado) (velocidad-exacta beta peso-enunciado t))) tolerancia)
+         (< (abs (- (distancia estado) (distancia-exacta beta peso-enunciado t))) tolerancia))))
+
+;; Distancias de los primeros n estados de la caída, en orden.
+(define (distancias-primeros-pasos n beta peso)
+  (let avanzar ((pasos-restantes n)
+                (estado estado-inicial)
+                (distancias '()))
+    (if (= pasos-restantes 0)
+        (reverse distancias)
+        (avanzar (- pasos-restantes 1)
+                 (siguiente-estado beta peso estado)
+                 (cons (distancia estado) distancias)))))
+
+;; ¿Cada número es mayor o igual que el anterior?
+(define (siempre-crece? numeros)
+  (or (null? numeros)
+      (null? (cdr numeros))
+      (and (<= (car numeros) (cadr numeros))
+           (siempre-crece? (cdr numeros)))))
+
+;; Beta encontrado para el caso del enunciado (80 kg + 50 kg desde 1500 m).
+;; Se calcula una sola vez y lo comparten varias pruebas.
+(define beta-enunciado (buscar-beta peso-enunciado 1500 velocidad-objetivo))
 
 (test-begin "paracaidista")
 
@@ -59,6 +71,37 @@
     (coincide-con-exacta? 10 1e-6))
   (test-assert "RK4 = solución exacta con beta = 574 (error < 1e-4)"
     (coincide-con-exacta? 574 1e-4)))
+
+(test-group "simulacion"
+  (test-equal "la simulación empieza en reposo"
+    estado-inicial (estado-en-tiempo 500 peso-enunciado 0))
+  (test-approximate "cada paso avanza h segundos"
+    paso-tiempo (tiempo (siguiente-estado 500 peso-enunciado estado-inicial)) 1e-12)
+  (test-approximate "estado-en-tiempo 10 está en t = 10"
+    10 (tiempo (estado-en-tiempo 500 peso-enunciado 10)) 1e-9)
+  (test-assert "la distancia nunca disminuye"
+    (siempre-crece? (distancias-primeros-pasos 1000 500 peso-enunciado)))
+  (test-assert "al aterrizar ya se recorrió la altura, sin pasarse más de un paso"
+    (let ((x (distancia (aterrizaje 500 peso-enunciado 1500))))
+      (and (>= x 1500) (< x 1501))))
+  (test-assert "más beta, aterrizaje más lento"
+    (> (velocidad-aterrizaje 100 peso-enunciado 1500)
+       (velocidad-aterrizaje 500 peso-enunciado 1500)))
+  (test-assert "acotar-beta da un beta que ya frena lo suficiente"
+    (<= (velocidad-aterrizaje (acotar-beta peso-enunciado 1500 velocidad-objetivo 1)
+                              peso-enunciado 1500)
+        velocidad-objetivo))
+  (test-approximate "beta del enunciado = 573.885 kg/s" 573.885 beta-enunciado 0.01)
+  (test-approximate "con ese beta se aterriza a 8 km/h"
+    8 (ms-a-kmh (velocidad-aterrizaje beta-enunciado peso-enunciado 1500)) 0.01)
+  (test-approximate "otro caso (60 + 20 kg desde 800 m) también aterriza a 8 km/h"
+    8
+    (let* ((peso (peso-total 60 20))
+           (beta (buscar-beta peso 800 velocidad-objetivo)))
+      (ms-a-kmh (velocidad-aterrizaje beta peso 800)))
+    0.01)
+  (test-assert "altura muy baja (0.1 m): casi no hace falta frenar"
+    (< (buscar-beta peso-enunciado 0.1 velocidad-objetivo) 1)))
 
 ;; Se guarda el número de fallas antes de cerrar la suite, para terminar el
 ;; programa con código de error si alguna prueba falló.

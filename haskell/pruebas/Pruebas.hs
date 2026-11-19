@@ -8,6 +8,7 @@ import System.Exit (exitFailure, exitSuccess)
 
 import Fisica
 import RungeKutta
+import Simulacion
 
 -- | Una prueba: su nombre y si se cumplió.
 type Prueba = (String, Bool)
@@ -20,20 +21,19 @@ casiIgual tolerancia esperado obtenido = abs (esperado - obtenido) < tolerancia
 pesoEnunciado :: Double
 pesoEnunciado = pesoTotal 80 50
 
--- | Estado después de n pasos de Runge-Kutta con h = 0.05, partiendo del reposo.
-estadoTrasPasos :: Int -> Double -> Double -> Estado
-estadoTrasPasos n beta peso =
-  iterate (pasoRK4 (derivadas beta peso) 0.05) (0, [0, 0]) !! n
-
--- | Compara Runge-Kutta con la solución exacta a los 20 s (400 pasos).
+-- | Compara Runge-Kutta con la solución exacta a los 20 s.
 coincideConExacta :: Double -> Double -> Bool
 coincideConExacta beta tolerancia =
-  casiIgual tolerancia (velocidadExacta beta pesoEnunciado t) v
-    && casiIgual tolerancia (distanciaExacta beta pesoEnunciado t) x
+  casiIgual tolerancia (velocidadExacta beta pesoEnunciado t) (velocidad estado)
+    && casiIgual tolerancia (distanciaExacta beta pesoEnunciado t) (distancia estado)
   where
-    (t, w) = estadoTrasPasos 400 beta pesoEnunciado
-    x = w !! 0
-    v = w !! 1
+    estado = estadoEnTiempo beta pesoEnunciado 20
+    t = tiempo estado
+
+-- | Beta encontrado para el caso del enunciado (80 kg + 50 kg desde 1500 m).
+-- Se calcula una sola vez y lo comparten varias pruebas.
+betaEnunciado :: Double
+betaEnunciado = buscarBeta pesoEnunciado 1500 velocidadObjetivo
 
 pruebasFisica :: [Prueba]
 pruebasFisica =
@@ -62,6 +62,36 @@ pruebasRungeKutta =
   , ("RK4 = solución exacta con beta = 574 (error < 1e-4)", coincideConExacta 574 1e-4)
   ]
 
+pruebasSimulacion :: [Prueba]
+pruebasSimulacion =
+  [ ("la trayectoria empieza en reposo", head (trayectoria 500 pesoEnunciado) == estadoInicial)
+  , ("cada paso avanza h segundos",
+      casiIgual 1e-12 pasoTiempo (tiempo (trayectoria 500 pesoEnunciado !! 1)))
+  , ("estadoEnTiempo 10 está en t = 10", casiIgual 1e-9 10 (tiempo (estadoEnTiempo 500 pesoEnunciado 10)))
+  , ("la distancia nunca disminuye", siempreCrece (map distancia (take 1000 (trayectoria 500 pesoEnunciado))))
+  , ("al aterrizar ya se recorrió la altura, sin pasarse más de un paso",
+      let x = distancia (aterrizaje 500 pesoEnunciado 1500)
+       in x >= 1500 && x < 1501)
+  , ("más beta, aterrizaje más lento",
+      velocidadAterrizaje 100 pesoEnunciado 1500 > velocidadAterrizaje 500 pesoEnunciado 1500)
+  , ("acotarBeta da un beta que ya frena lo suficiente",
+      velocidadAterrizaje (acotarBeta pesoEnunciado 1500 velocidadObjetivo 1) pesoEnunciado 1500
+        <= velocidadObjetivo)
+  , ("beta del enunciado = 573.885 kg/s", casiIgual 0.01 573.885 betaEnunciado)
+  , ("con ese beta se aterriza a 8 km/h",
+      casiIgual 0.01 8 (msAKmh (velocidadAterrizaje betaEnunciado pesoEnunciado 1500)))
+  , ("otro caso (60 + 20 kg desde 800 m) también aterriza a 8 km/h",
+      let peso = pesoTotal 60 20
+          beta = buscarBeta peso 800 velocidadObjetivo
+       in casiIgual 0.01 8 (msAKmh (velocidadAterrizaje beta peso 800)))
+  , ("altura muy baja (0.1 m): casi no hace falta frenar",
+      buscarBeta pesoEnunciado 0.1 velocidadObjetivo < 1)
+  ]
+
+-- | ¿Cada número es mayor o igual que el anterior?
+siempreCrece :: [Double] -> Bool
+siempreCrece xs = and (zipWith (<=) xs (drop 1 xs))
+
 -- | Imprime el resultado de una prueba.
 mostrarPrueba :: Prueba -> IO ()
 mostrarPrueba (nombre, paso) =
@@ -69,7 +99,7 @@ mostrarPrueba (nombre, paso) =
 
 main :: IO ()
 main = do
-  let pruebas = pruebasFisica ++ pruebasRungeKutta
+  let pruebas = pruebasFisica ++ pruebasRungeKutta ++ pruebasSimulacion
       fallidas = length (filter (not . snd) pruebas)
   mapM_ mostrarPrueba pruebas
   putStrLn ""

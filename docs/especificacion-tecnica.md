@@ -109,9 +109,13 @@ Mientras más grande es β, más frena el paracaídas y más lento se llega al s
 velocidad de aterrizaje **disminuye** al aumentar β. Eso permite buscar β en dos fases:
 
 1. **Acotar:** empezar con β = 1 y duplicarlo (1, 2, 4, 8, …) hasta que la velocidad de
-   aterrizaje sea menor o igual que la deseada. Entonces el β buscado está entre `β/2` y `β`.
-2. **Bisección:** partir el intervalo a la mitad, quedarse con la mitad donde está la
-   respuesta, y repetir hasta que el intervalo mida menos de **10⁻⁶ kg/s**.
+   aterrizaje sea menor o igual que la deseada. A ese valor le llamamos `βmax`: el β buscado
+   está entre 0 y `βmax`.
+2. **Bisección:** partir el intervalo `[0, βmax]` a la mitad, quedarse con la mitad donde
+   está la respuesta, y repetir hasta que el intervalo mida menos de **10⁻⁶ kg/s**.
+
+Se biseca desde 0 (y no desde `βmax/2`) para cubrir también saltos muy bajos, de menos de
+unos 25 cm, donde incluso β = 1 ya basta. Cuesta solo una simulación más.
 
 Cada evaluación de "velocidad de aterrizaje para un β" es una simulación completa con
 Runge-Kutta. Así, β se encuentra **experimentalmente con el programa**, como pide el
@@ -131,6 +135,7 @@ Para 80 kg + 50 kg desde 1 500 m:
 | β encontrado | 573.885 kg/s |
 | Tiempo de caída | 675.25 s |
 | Velocidad de aterrizaje | 2.2222 m/s = 8.00 km/h |
+| Simulaciones necesarias | 11 para acotar (β = 1, 2, …, 1024) + 30 de bisección |
 
 β coincide con `W / v_objetivo = 1275.3 / 2.2222`. Tiene sentido: desde 1 500 m el
 paracaidista alcanza su velocidad límite en menos de un segundo, así que llega al suelo a esa
@@ -261,7 +266,9 @@ Notación: `Vector` es una lista de números; `Estado` es el par `(t, [x, v])`.
 | Función | Firma | Qué hace |
 |---|---|---|
 | `pasoTiempo` | `Número` | h = 0.05 s |
+| `toleranciaBeta` | `Número` | 10⁻⁶ kg/s: precisión con la que se busca β |
 | `estadoInicial` | `Estado` | `(0, [0, 0])`: en reposo al inicio |
+| `tiempo`, `distancia`, `velocidad` | `Estado → Número` | Leen `t`, `x` o `v` de un estado |
 | `trayectoria` | `β → W → [Estado]` | Todos los estados de la caída, paso a paso |
 | `aterrizaje` | `β → W → altura → Estado` | Primer estado con `x ≥ altura` |
 | `velocidadAterrizaje` | `β → W → altura → v` | Velocidad en el estado de aterrizaje |
@@ -322,7 +329,7 @@ biseccion(W, altura, vObj, βmin, βmax) =
 
 buscarBeta(W, altura, vObj) =
     sea βmax = acotarBeta(W, altura, vObj, 1)
-    en  biseccion(W, altura, vObj, βmax/2, βmax)
+    en  biseccion(W, altura, vObj, 0, βmax)
 ```
 
 `biseccion` devuelve `βmax` y no el punto medio porque `βmax` siempre cumple la condición
